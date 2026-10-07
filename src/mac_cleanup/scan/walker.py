@@ -78,6 +78,7 @@ class Walker:
         budget_flags: dict[int, BudgetFlag] | None = None,
         cross_device: bool = False,
         follow_firmlinks: bool = False,
+        sink: object | None = None,
     ) -> None:
         self.forest = forest
         self.workers = max(1, workers)
@@ -86,6 +87,7 @@ class Walker:
         self.budget_flags = budget_flags or {}
         self.cross_device = cross_device
         self.follow_firmlinks = follow_firmlinks
+        self.sink = sink
 
         self._cv = threading.Condition()
         self._stack: deque[tuple[str, int, int]] = deque()  # (path, node_id, root_dev)
@@ -98,6 +100,7 @@ class Walker:
         self._seen_dirs: set[tuple[int, int]] = set()
         self._dir_count = 0
         self.current_path = ""
+        self._finished = threading.Event()
 
         self.cancel.wake = self._cv
 
@@ -123,8 +126,20 @@ class Walker:
         ]
         for t in threads:
             t.start()
+
+        # One pump thread owns all progress output. Workers never print, so there is
+        # exactly one writer and no interleaving. Without this a long walk is
+        # indistinguishable from a hang -- which is the complaint this project started from.
+        pump = None
+        if self.sink is not None:
+            pump = threading.Thread(target=self._pump, daemon=True, name="walk-pump")
+            pump.start()
+
         for t in threads:
             t.join()
+        self._finished.set()
+        if pump is not None:
+            pump.join(timeout=1.0)
 
         with self._cv:
             pending = len(self._stack)
@@ -136,6 +151,20 @@ class Walker:
             elapsed_s=time.monotonic() - started,
             dir_count=self._dir_count,
         )
+
+    def _pump(self) -> None:
+        """Publish progress at a fixed cadence until the walk finishes."""
+        sink = self.sink
+        assert sink is not None
+        while not self._finished.wait(0.1):
+            with self._cv:
+                total = sum(self._totals.alloc.values())
+                files = sum(self._totals.files.values())
+                pending = len(self._stack)
+                current = self.current_path
+            sink.update(  # type: ignore[attr-defined]
+                bytes_done=total, files=files, pending=pending, current=current
+            )
 
     # ------------------------------------------------------------------ worker
 

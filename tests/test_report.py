@@ -142,3 +142,47 @@ def test_dump_refuses_to_write_an_artifact_containing_a_path(tmp_path):
     with pytest.raises(ValueError, match="path-like"):
         dump_artifact({"p": "/etc/passwd"}, str(out), home="/Users/nobody")
     assert not out.exists(), "nothing is written when the guard fires"
+
+
+# ----------------------------------------------------------------- dry-run honesty
+
+
+def test_a_dry_run_never_presents_a_statvfs_delta():
+    """Nothing was removed, so any movement in free space is other processes. Printing it
+    as a result would be the exact class of lie this project exists to remove."""
+    r = RunReport(
+        outcomes=[TargetOutcome("t", "ok", freed_bytes=10 * GIB)],
+        free_before=1 * GIB,
+        free_after=9 * GIB,
+        dry_run=True,
+    )
+    text = r.human()
+    assert "Would free" in text
+    assert "Disk free delta" not in text
+    assert "Unaccounted" not in text
+
+
+def test_a_dry_run_artifact_nulls_the_delta_rather_than_zeroing_it():
+    """A 0 would read as 'measured no change'. null says 'not measured'."""
+    r = RunReport(
+        outcomes=[TargetOutcome("t", "ok", freed_bytes=GIB)],
+        free_before=GIB,
+        free_after=2 * GIB,
+        dry_run=True,
+    )
+    art = r.to_artifact()
+    assert art["dry_run"] is True
+    assert art["disk_delta_bytes"] is None
+    assert art["unaccounted_bytes"] is None
+    assert art["accounted_bytes"] == GIB
+
+
+def test_a_real_run_does_report_both_numbers():
+    r = RunReport(
+        outcomes=[TargetOutcome("t", "ok", freed_bytes=GIB)],
+        free_before=GIB,
+        free_after=2 * GIB,
+        dry_run=False,
+    )
+    assert "Disk free delta" in r.human()
+    assert r.to_artifact()["disk_delta_bytes"] == GIB

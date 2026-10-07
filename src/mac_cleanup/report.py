@@ -76,13 +76,22 @@ class RunReport:
         return 0
 
     def human(self) -> str:
-        lines = [
-            f"Freed (accounted):  {human_bytes(self.accounted):>12}"
-            f"  across {len(self.outcomes)} targets",
-            f"Disk free delta:    {human_bytes(max(self.disk_delta, 0)):>12}"
-            "  (statvfs before/after)",
-        ]
-        gap = self.unaccounted
+        if self.dry_run:
+            # No statvfs line in a dry run. Nothing was removed, so any movement in free
+            # space is other processes, and printing it as a result would be a lie of
+            # exactly the kind this tool exists to stop.
+            lines = [
+                f"Would free:         {human_bytes(self.accounted):>12}"
+                f"  across {len(self.outcomes)} targets (upper bound)",
+            ]
+        else:
+            lines = [
+                f"Freed (accounted):  {human_bytes(self.accounted):>12}"
+                f"  across {len(self.outcomes)} targets",
+                f"Disk free delta:    {human_bytes(max(self.disk_delta, 0)):>12}"
+                "  (statvfs before/after)",
+            ]
+        gap = 0 if self.dry_run else self.unaccounted
         if gap > 0:
             why = []
             if self.snapshots:
@@ -110,8 +119,10 @@ class RunReport:
             "schema": "mac-cleanup/run/1",
             "dry_run": self.dry_run,
             "accounted_bytes": self.accounted,
-            "disk_delta_bytes": self.disk_delta,
-            "unaccounted_bytes": self.unaccounted,
+            # Null rather than 0 in a dry run: the number is not meaningful, and a 0 would
+            # read as "measured no change".
+            "disk_delta_bytes": None if self.dry_run else self.disk_delta,
+            "unaccounted_bytes": None if self.dry_run else self.unaccounted,
             "local_snapshot_count": len(self.snapshots),
             "targets": [
                 {

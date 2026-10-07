@@ -10,6 +10,7 @@ import pytest
 from mac_cleanup.cli import (
     EXIT_DRY_RUN_DEFAULT,
     EXIT_GUARD_SKIPPED,
+    EXIT_NOTHING,
     EXIT_OK,
     EXIT_USAGE,
     build_parser,
@@ -59,9 +60,15 @@ def test_plain_dry_run_is_fine():
 # ----------------------------------------------------------------------- exit codes
 
 
+def test_clean_with_no_selection_reports_nothing_rather_than_guessing():
+    assert main(["clean"]) == EXIT_NOTHING
+
+
 def test_clean_without_apply_exits_dry_run_default(capsys):
-    assert main(["clean"]) == EXIT_DRY_RUN_DEFAULT
-    assert "nothing will be removed" in capsys.readouterr().err
+    """A real selection, no --apply: plans and exits 5, never 0, so a CI step that forgot
+    --apply is visibly not-a-success rather than a green no-op."""
+    assert main(["clean", "--select", "cache.pip"]) == EXIT_DRY_RUN_DEFAULT
+    assert "DRY RUN" in capsys.readouterr().err
 
 
 def test_clean_with_yes_but_no_apply_is_a_usage_error():

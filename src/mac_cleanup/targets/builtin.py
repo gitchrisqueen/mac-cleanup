@@ -22,6 +22,7 @@ from mac_cleanup.targets.model import (
     DelegatedTarget,
     PathTarget,
     Profile,
+    Target,
 )
 
 GIB = 1024**3
@@ -267,12 +268,12 @@ PROFILES: tuple[Profile, ...] = (
 )
 
 
-def all_targets() -> tuple[object, ...]:
+def all_targets() -> tuple[Target, ...]:
     return (*PATH_TARGETS, *DELEGATED_TARGETS, *REPORT_ONLY_TARGETS)
 
 
-def by_id() -> dict[str, object]:
-    return {t.target_id: t for t in all_targets()}  # type: ignore[attr-defined]
+def by_id() -> dict[str, Target]:
+    return {t.target_id: t for t in all_targets()}
 
 
 def profile(name: str) -> Profile | None:

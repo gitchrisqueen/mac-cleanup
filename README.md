@@ -10,16 +10,36 @@ own tool where one exists, and otherwise from a short frozen list of paths.
 > [Why this instead](#why-this-instead). It is distributed as `mac-cleanup-cli`.
 
 ```console
-$ mac-cleanup profile list
-safe v1  10 targets  Regenerable caches and vendor GC. Nothing a running app owns.
-dev v1   14 targets  safe, plus developer caches that cost a rebuild or a download.
+$ mac-cleanup list                       # what is there, from cache, instantly
+TARGET                                           SIZE  RISK           NOTE
+xcode.derived-data                          3.26 GiB  regenerable
+pnpm.store-orphan                           5.86 GiB  regenerable
+icloud.local-copies      19.59 GiB local (evicted content not counted)  report-only  *
+ios.backups                                31.90 GiB  report-only                    *
 
-$ mac-cleanup clean --profile safe          # no --apply: plans only, exits 5
-Dry run (no --apply): nothing will be removed.
+$ mac-cleanup size --select group:xcode  # measure for real, with live progress
+$ mac-cleanup du ~/Library/Caches        # where did the space actually go
+    7.75 GiB  Homebrew
+    1.93 GiB  Google
+  895.40 MiB  com.anthropic.claudefordesktop.ShipIt
+
+$ mac-cleanup clean --profile safe       # plans only; exits 5, never 0
+DRY RUN -- nothing will be removed. Re-run with --apply.
+Would free:             1.49 GiB  across 10 targets (upper bound)
+
+$ mac-cleanup clean --select cache.pip --apply
+Freed (accounted):    439.61 MiB  across 1 targets
+Disk free delta:      440.03 MiB  (statvfs before/after)
 ```
 
-Dry run is what you get without `--apply`. `--yes` **always** requires `--apply`, so an
-unattended run cannot delete without the destructive word being visible in the crontab.
+Dry run is what you get without `--apply`, and it exits **5**, not 0, so a CI step that
+forgot the flag is visibly not-a-success rather than a green no-op. A dry run never prints a
+`statvfs` delta: nothing was removed, so any movement in free space is other processes, and
+showing it would be a result that is not one.
+
+`--yes` **always** requires `--apply`. Tty detection would have been the wrong gate --
+`tmux new-session -d 'mac-cleanup --yes'` has a tty -- so the destructive word is mandatory
+in every unattended invocation, where a reviewer can see it in the crontab.
 
 ## Install
 
