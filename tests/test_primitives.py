@@ -239,3 +239,52 @@ def test_probe_uses_a_short_timeout_so_a_dead_daemon_cannot_hang_a_render():
 def test_action_timeout_is_longer_than_the_probe_timeout():
     r = Runner()
     assert r.timeout > r.probe_timeout
+
+
+def test_cache_returns_stale_entries_flagged_rather_than_none(tmp_path):
+    """The mechanism behind an instant menu: a cache that only answers when fresh forces
+    the caller to block, which is the behaviour being removed."""
+    import os as _os
+
+    from mac_cleanup.scan.cache import SizeCache
+
+    target = tmp_path / "d"
+    target.mkdir()
+    st = _os.lstat(target)
+    cache = SizeCache(path=str(tmp_path / "sizes.json"))
+    cache.put(str(target), st, alloc=4096, logical=10, files=1, quality="exact", duration_s=0.1)
+
+    fresh = cache.get(str(target), st, ttl=10_000)
+    assert fresh is not None and fresh.stale is False and fresh.alloc == 4096
+
+    stale = cache.get(str(target), st, ttl=-1)  # expired by construction
+    assert stale is not None, "a stale entry is returned, not withheld"
+    assert stale.stale is True
+    assert stale.alloc == 4096
+
+
+def test_cache_drop_forgets_one_entry(tmp_path):
+    """Called after a target is cleaned, so `list` stops reporting bytes that are gone."""
+    import os as _os
+
+    from mac_cleanup.scan.cache import SizeCache
+
+    target = tmp_path / "d"
+    target.mkdir()
+    st = _os.lstat(target)
+    cache = SizeCache(path=str(tmp_path / "sizes.json"))
+    cache.put(str(target), st, alloc=4096, logical=10, files=1, quality="exact", duration_s=0.1)
+    assert cache.drop(str(target), st) is True
+    assert cache.get(str(target), st, ttl=10_000) is None
+    assert cache.drop(str(target), st) is False, "dropping twice is not an error"
+
+
+def test_a_corrupt_cache_file_yields_an_empty_cache_not_an_exception(tmp_path):
+    from mac_cleanup.scan.cache import SizeCache
+
+    for payload in ("", "{", "null", "[]", '{"schema": 999}', '{"schema": 1, "entries": 3}'):
+        p = tmp_path / "c.json"
+        p.write_text(payload)
+        cache = SizeCache(path=str(p))
+        cache.load()
+        assert len(cache) == 0, f"payload {payload!r} must not break startup"

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mac-cleanup-cli"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "A macOS disk-space auditor that can delete: it measures developer cache locations, reports what they cost, and reclaims them through each vendor's own tool."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -68,6 +68,8 @@ ban-relative-imports = "all"
 "src/mac_cleanup/fs/deleter.py" = ["TID251"]
 "src/mac_cleanup/ext/runner.py" = ["TID251"]
 "src/mac_cleanup/paths.py"      = ["TID251"]
+# Unlinks only the temp file it just created for an atomic replace of its own cache.
+"src/mac_cleanup/scan/cache.py" = ["TID251"]
 # N818 wants an `Error` suffix. `Refusal` is deliberate: a refusal is the guard working as
 # designed, not a failure, and the name is load-bearing in the docs and the test assertions.
 "src/mac_cleanup/errors.py"     = ["N818"]

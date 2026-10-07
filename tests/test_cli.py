@@ -10,6 +10,7 @@ import pytest
 from mac_cleanup.cli import (
     EXIT_DRY_RUN_DEFAULT,
     EXIT_GUARD_SKIPPED,
+    EXIT_NOTHING,
     EXIT_OK,
     EXIT_USAGE,
     build_parser,
@@ -59,9 +60,33 @@ def test_plain_dry_run_is_fine():
 # ----------------------------------------------------------------------- exit codes
 
 
-def test_clean_without_apply_exits_dry_run_default(capsys):
-    assert main(["clean"]) == EXIT_DRY_RUN_DEFAULT
-    assert "nothing will be removed" in capsys.readouterr().err
+def test_clean_with_no_selection_reports_nothing_rather_than_guessing():
+    assert main(["clean"]) == EXIT_NOTHING
+
+
+def test_clean_without_apply_exits_dry_run_default(capsys, monkeypatch, tmp_path):
+    """A real selection, no --apply: plans and exits 5, never 0, so a CI step that forgot
+    --apply is visibly not-a-success rather than a green no-op.
+
+    The target is injected rather than taken from the built-in list, because every built-in
+    path is macOS-specific and the suite runs on Linux. Testing the behaviour beats testing
+    the host.
+    """
+    from mac_cleanup import cli as cli_mod
+    from mac_cleanup import service as service_mod
+    from mac_cleanup.targets.model import PathTarget
+
+    junk = tmp_path / "junk"
+    junk.mkdir()
+    (junk / "f").write_bytes(b"x" * 100)
+    fake = PathTarget(target_id="test.target", path=str(junk), label="injected", group="test")
+    registry = {"test.target": fake}
+    monkeypatch.setattr(cli_mod, "by_id", lambda: registry)
+    monkeypatch.setattr(service_mod, "by_id", lambda: registry)
+
+    assert main(["clean", "--select", "test.target"]) == EXIT_DRY_RUN_DEFAULT
+    assert "DRY RUN" in capsys.readouterr().err
+    assert (junk / "f").exists(), "a dry run must not remove anything"
 
 
 def test_clean_with_yes_but_no_apply_is_a_usage_error():

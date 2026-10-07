@@ -18,15 +18,18 @@ time could be different rows -- on a tool that calls ``rm -rf``.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from mac_cleanup import __version__
+from mac_cleanup import __version__, service
 from mac_cleanup.errors import Refusal
 from mac_cleanup.paths import home, state_dir
+from mac_cleanup.progress import make_sink
+from mac_cleanup.render import human_bytes, size_cell, truncate_middle
 from mac_cleanup.targets.builtin import PROFILES, by_id, profile
 
 EXIT_OK = 0
@@ -173,7 +176,16 @@ def build_parser() -> argparse.ArgumentParser:
     lst.add_argument("--group", help="only this group")
 
     size = sub.add_parser("size", parents=[common], help="measure targets")
-    size.add_argument("selectors", nargs="*", default=["all"])
+    size.add_argument("selectors", nargs="*", help="target ids; default all")
+    size.add_argument(
+        "-s",
+        "--select",
+        action="append",
+        default=[],
+        dest="select",
+        metavar="ID",
+        help="target id, group:NAME, or ID.* glob; repeatable",
+    )
     size.add_argument("--exact", action="store_true", help="ignore budgets; measure fully")
     size.add_argument("--threads", type=int, default=8)
 
@@ -189,7 +201,16 @@ def build_parser() -> argparse.ArgumentParser:
     du.add_argument("--full-paths", action="store_true", help="print full paths, not basenames")
 
     clean = sub.add_parser("clean", parents=[common], help="reclaim space")
-    clean.add_argument("selectors", nargs="*")
+    clean.add_argument("selectors", nargs="*", help="target ids (see `mac-cleanup list`)")
+    clean.add_argument(
+        "-s",
+        "--select",
+        action="append",
+        default=[],
+        dest="select",
+        metavar="ID",
+        help="target id, group:NAME, or ID.* glob; repeatable",
+    )
     clean.add_argument("-p", "--profile", default=None, help="safe | dev")
     clean.add_argument("-n", "--dry-run", action="store_true", help="plan only; never mutates")
     clean.add_argument("--apply", action="store_true", help="actually do it")
@@ -245,28 +266,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_profile(args)
         if args.command == "doctor":
             return _cmd_doctor(args)
+        if args.command == "list":
+            return _cmd_list(args)
+        if args.command == "size":
+            return _cmd_size(args)
+        if args.command == "du":
+            return _cmd_du(args)
+        if args.command == "cache":
+            return _cmd_cache(args)
         if args.command == "clean":
-            flags = validate_clean_flags(args)
-            if not flags.ok:
-                print(flags.message, file=sys.stderr)
-                return EXIT_USAGE
-            if not args.apply:
-                print(
-                    "Dry run (no --apply): nothing will be removed.",
-                    file=sys.stderr,
-                )
-                return EXIT_DRY_RUN_DEFAULT
-            print("clean --apply is not implemented in this commit", file=sys.stderr)
-            return EXIT_USAGE
-        if args.command == "du" and is_cloud_path(args.path) and not args.cloud:
-            print(
-                f"Refusing to walk {args.path}: it is inside a cloud provider, and "
-                "enumerating one makes it fetch content from the server. Pass --cloud to "
-                "override.",
-                file=sys.stderr,
-            )
-            return EXIT_GUARD_SKIPPED
-        print(f"{args.command} is not implemented in this commit", file=sys.stderr)
+            return _cmd_clean(args)
+        print(f"unknown command: {args.command}", file=sys.stderr)
         return EXIT_USAGE
     except Refusal as exc:
         print(f"{exc.code}: {exc.detail or exc.path}", file=sys.stderr)
@@ -308,6 +318,205 @@ def _cmd_doctor(_args: argparse.Namespace) -> int:
     for name, value in checks:
         print(f"{name:<18} {value}")
     return EXIT_OK
+
+
+def _emit(payload: object, as_json: bool, human: str) -> None:
+    """stdout carries the payload; stderr carries chrome. JSON mode is uncorruptible by
+    construction rather than by remembering to suppress things."""
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(human)
+
+
+def _cmd_list(args: argparse.Namespace) -> int:
+    rows = service.detect(include_absent=args.all)
+    if args.group:
+        rows = [r for r in rows if r.group == args.group]
+    if not rows:
+        print("no targets matched", file=sys.stderr)
+        return EXIT_NOTHING
+
+    rows.sort(key=lambda r: (-r.size.alloc, r.target_id))
+    if args.json:
+        _emit(
+            {
+                "targets": [
+                    {
+                        "target_id": r.target_id,
+                        "group": r.group,
+                        "risk": r.risk,
+                        "present": r.present,
+                        "alloc_bytes": r.size.alloc,
+                        "quality": r.size.quality,
+                        "stale": r.stale,
+                        "non_default": r.non_default,
+                    }
+                    for r in rows
+                ]
+            },
+            True,
+            "",
+        )
+        return EXIT_OK
+
+    print(f"{'TARGET':<30} {'SIZE':>22}  {'RISK':<14} NOTE")
+    total = 0
+    for r in rows:
+        cell = size_cell(r.size.alloc, r.size.quality, reason=r.reason, age_s=r.age_s)
+        mark = " *" if r.non_default else ""
+        print(f"{r.target_id:<30} {cell:>22}  {r.risk:<14} {r.reason}{mark}")
+        total += r.size.alloc
+    print(f"\n{len(rows)} targets, {human_bytes(total)} known (cached where available).")
+    print("Sizes are an upper bound; run `size` to measure. * = not in any profile.")
+    return EXIT_OK
+
+
+def _cmd_size(args: argparse.Namespace) -> int:
+    chosen = list(args.selectors or []) + list(getattr(args, "select", []) or [])
+    ids = resolve_selectors(chosen or ["all"])
+    sink = make_sink(json_mode=args.json)
+    sizes = service.measure(ids, workers=args.threads, sink=sink)
+    if not sizes:
+        print("nothing measurable in that selection", file=sys.stderr)
+        return EXIT_NOTHING
+
+    ordered = sorted(sizes.items(), key=lambda kv: -kv[1].alloc)
+    if args.json:
+        _emit(
+            {
+                "targets": [
+                    {
+                        "target_id": tid,
+                        "alloc_bytes": s.alloc,
+                        "logical_bytes": s.logical,
+                        "files": s.files,
+                        "quality": s.quality,
+                        "dataless_files": s.dataless_files,
+                    }
+                    for tid, s in ordered
+                ]
+            },
+            True,
+            "",
+        )
+        return EXIT_OK
+
+    total = 0
+    for tid, s in ordered:
+        print(f"{tid:<30} {size_cell(s.alloc, s.quality):>22}  {s.files:>9,} files")
+        total += s.alloc
+    print(f"\n{human_bytes(total)} across {len(ordered)} targets (upper bound).")
+    return EXIT_OK
+
+
+def _cmd_du(args: argparse.Namespace) -> int:
+    if is_cloud_path(args.path) and not args.cloud:
+        print(
+            f"Refusing to walk {args.path}: it is inside a cloud provider, and enumerating "
+            "one makes it fetch content from the server -- a network transfer and a write "
+            "from a read-only command. Pass --cloud to override.",
+            file=sys.stderr,
+        )
+        return EXIT_GUARD_SKIPPED
+
+    sink = make_sink(json_mode=args.json)
+    children = service.du(
+        args.path,
+        workers=args.threads,
+        cross_device=args.cross_device,
+        include_cloud=args.cloud,
+        sink=sink,
+    )
+    if not children:
+        print("nothing under that path", file=sys.stderr)
+        return EXIT_NOTHING
+
+    if args.json:
+        _emit(
+            {
+                "children": [
+                    {
+                        "name": c.name if not args.full_paths else c.path,
+                        "alloc_bytes": c.alloc,
+                        "files": c.files,
+                    }
+                    for c in children
+                ]
+            },
+            True,
+            "",
+        )
+        return EXIT_OK
+
+    total = sum(c.alloc for c in children)
+    for c in children:
+        name = c.path if args.full_paths else c.name
+        print(f"{human_bytes(c.alloc):>12}  {truncate_middle(name, 60)}")
+    print(f"\n{human_bytes(total)} total. Symlinks are not followed; device boundaries are")
+    print("not crossed without --cross-device. Basenames only unless --full-paths.")
+    return EXIT_OK
+
+
+def _cmd_cache(args: argparse.Namespace) -> int:
+    from mac_cleanup.scan.cache import SizeCache
+
+    cache = SizeCache()
+    cache.load()
+    if args.action == "clear":
+        n = cache.clear()
+        cache.save()
+        print(f"cleared {n} cached measurements")
+        return EXIT_OK
+    print(f"{len(cache)} cached measurements at {cache.path}")
+    return EXIT_OK
+
+
+def _cmd_clean(args: argparse.Namespace) -> int:
+    flags = validate_clean_flags(args)
+    if not flags.ok:
+        print(flags.message, file=sys.stderr)
+        return EXIT_USAGE
+
+    selectors = list(args.selectors or []) + list(getattr(args, "select", []) or [])
+    if args.profile:
+        chosen = profile(args.profile)
+        if chosen is None:
+            print(f"unknown profile: {args.profile}", file=sys.stderr)
+            return EXIT_USAGE
+        selectors.extend(chosen.target_ids)
+    if not selectors:
+        print("nothing selected. Use --profile safe or --select <id>.", file=sys.stderr)
+        return EXIT_NOTHING
+
+    ids = resolve_selectors(selectors)
+    clean_plan = service.plan(ids)
+    dry = not args.apply
+
+    for tid, why in clean_plan.refused:
+        print(f"  skip {tid}: {why}", file=sys.stderr)
+
+    if not clean_plan.path_targets and not clean_plan.delegated:
+        print("nothing to do", file=sys.stderr)
+        return EXIT_NOTHING
+
+    if dry:
+        print("DRY RUN -- nothing will be removed. Re-run with --apply.", file=sys.stderr)
+    elif clean_plan.delegated:
+        tools = ", ".join(sorted({d.tool for d in clean_plan.delegated}))
+        print(
+            f"About to run: {tools}. These cannot be interrupted once started -- they are "
+            "spawned in their own session so Ctrl-C cannot leave a half-rewritten package "
+            "tree.",
+            file=sys.stderr,
+        )
+
+    report = service.execute(clean_plan, dry_run=dry)
+    if args.json:
+        _emit(report.to_artifact(), True, "")
+    else:
+        print(report.human())
+    return EXIT_DRY_RUN_DEFAULT if dry else report.exit_code()
 
 
 if __name__ == "__main__":  # pragma: no cover

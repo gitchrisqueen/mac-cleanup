@@ -20,8 +20,13 @@ else
 fi
 
 echo "[guard] exactly one deletion call site, and one subprocess importer"
+# Allowlist, mirrored exactly in pyproject.toml's [tool.ruff.lint.per-file-ignores]:
+#   fs/deleter.py   -- removes user data; the whole point of the seam
+#   scan/cache.py   -- removes only the temp file it created for an atomic replace of its
+#                      own state file. Declared here so grep and ruff agree.
 offenders=$(grep -rnE '\b(shutil\.rmtree|os\.remove|os\.unlink|os\.rmdir|os\.removedirs)\b' src/ \
-  | grep -v '^src/mac_cleanup/fs/deleter.py:' || true)
+  | grep -v '^src/mac_cleanup/fs/deleter.py:' \
+  | grep -v '^src/mac_cleanup/scan/cache.py:' || true)
 if [ -n "$offenders" ]; then
   note "FAIL: deletion outside fs/deleter.py:"; printf '%s\n' "$offenders"; fail=1
 else
