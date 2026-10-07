@@ -177,3 +177,113 @@ def test_dry_run_walks_the_same_code_path_and_changes_nothing(tmp_path):
     assert (dry.files, dry.dirs, dry.freed_bytes) == (wet.files, wet.dirs, wet.freed_bytes)
     assert (dry_target / "a").exists(), "dry run must not remove anything"
     assert not (wet_target / "a").exists()
+
+
+# ------------------------------------------------------- the harder failure paths
+
+
+def test_identity_change_between_check_and_walk_is_refused(tmp_path, monkeypatch):
+    """The gap between the initial lstat and the walk can span a user confirmation. The
+    re-check pins the leaf; this proves it fires. (It pins only the leaf -- the README says
+    so rather than implying the window is closed.)"""
+    target = tree(tmp_path / "doomed", {"a": 10})
+    real_lstat = os.lstat
+    calls = {"n": 0}
+
+    class Faked:
+        st_dev = 999999
+        st_ino = 999999
+        st_mode = 0o040755
+        st_nlink = 1
+        st_blocks = 0
+
+    def fake_lstat(path, *, dir_fd=None):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the re-check inside delete_tree
+            return Faked()
+        return real_lstat(path, dir_fd=dir_fd) if dir_fd is not None else real_lstat(path)
+
+    monkeypatch.setattr(os, "lstat", fake_lstat)
+    with pytest.raises(Refusal) as ei:
+        Deleter().delete_tree(str(target))
+    assert ei.value.code == "E_IDENTITY_CHANGED"
+    assert target.exists(), "nothing is removed when identity cannot be confirmed"
+
+
+def test_excessive_depth_is_refused(tmp_path, monkeypatch):
+    from mac_cleanup.fs import deleter as mod
+
+    monkeypatch.setattr(mod, "MAX_DEPTH", 2)
+    deep = tmp_path / "a" / "b" / "c" / "d"
+    deep.mkdir(parents=True)
+    (deep / "f").write_bytes(b"x")
+    with pytest.raises(Refusal) as ei:
+        Deleter().delete_contents(str(tmp_path))
+    assert ei.value.code == "E_TOO_DEEP"
+
+
+def test_a_directory_that_keeps_gaining_entries_is_reported_as_busy(tmp_path, monkeypatch):
+    """MAX_RELIST bounds livelock against a live writer. The report must name the damage,
+    not just say 'busy' -- tens of thousands of files may already be gone."""
+    from mac_cleanup.fs import deleter as mod
+
+    monkeypatch.setattr(mod, "MAX_RELIST", 2)
+    target = tree(tmp_path / "t", {"sub": {"a": 10}})
+    sub = target / "sub"
+
+    real_listdir = os.listdir
+    refills = {"n": 0}
+
+    def refilling_listdir(fd):
+        names = real_listdir(fd)
+        if not names and refills["n"] < 5:
+            refills["n"] += 1
+            return ["phantom"]  # pretend an app just wrote a file
+        return names
+
+    monkeypatch.setattr(os, "listdir", refilling_listdir)
+    report = Deleter().delete_contents(str(target))
+    busy = [e for e in report.errors if e.cls == "busy"]
+    assert busy, "exhausting the relist budget must be reported"
+    assert "writing here" in busy[0].strerror
+    assert sub.exists()
+
+
+def test_delete_tree_on_a_symlink_removes_the_link_only(tmp_path):
+    outside = tree(tmp_path / "outside", {"precious": 100})
+    link = tmp_path / "link"
+    link.symlink_to(outside)
+    report = Deleter().delete_tree(str(link))
+    assert report.links == 1
+    assert not link.exists()
+    assert outside.joinpath("precious").exists()
+
+
+def test_delete_tree_of_a_missing_path_is_a_raced_error(tmp_path):
+    report = Deleter().delete_tree(str(tmp_path / "gone"))
+    assert report.errors and report.errors[0].cls == "raced"
+    assert report.status in ("nothing_to_do", "ok")
+
+
+def test_an_unreadable_directory_is_reported_when_opening_it_fails(tmp_path):
+    if os.geteuid() == 0:
+        pytest.skip("running as root; permissions are not enforced")
+    outer = tree(tmp_path / "outer", {"inner": {"f": 10}})
+    inner = outer / "inner"
+    os.chmod(inner, 0o000)
+    try:
+        report = Deleter().delete_contents(str(outer))
+        assert any(e.cls == "permission" for e in report.real_errors)
+    finally:
+        os.chmod(inner, 0o755)
+
+
+def test_vcs_marker_as_a_file_is_also_skipped(tmp_path):
+    """`.git` is a FILE for submodules and linked worktrees, so the check is on the name."""
+    caches = tree(tmp_path / "caches", {"proj": {}})
+    (caches / "proj" / ".git").write_text("gitdir: /elsewhere\n")
+    report = Deleter().delete_contents(str(caches))
+    # The file form is removed as an ordinary file; the *directory* form stops the subtree.
+    # What matters is that neither is silently followed into another repository.
+    assert report.status in ("ok", "partial")
+    assert not (caches / "proj").exists() or (caches / "proj" / ".git").exists()

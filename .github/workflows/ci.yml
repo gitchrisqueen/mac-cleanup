@@ -1,0 +1,148 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_call: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv venv --python 3.11
+      - run: uv pip install ruff mypy
+      - name: Format and lint
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+      - name: Types
+        run: uv run mypy
+      - name: Shell
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          bash -n bin/mac-cleanup scripts/*.sh
+          shellcheck -S warning bin/mac-cleanup scripts/*.sh
+
+  test:
+    name: test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv venv --python ${{ matrix.python }}
+      - run: uv pip install pytest pytest-cov pytest-timeout
+      - name: Tests with coverage
+        run: uv run pytest -q --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Coverage floors on the modules a defect is expensive in
+        # Deliberately per-module, not repo-wide: easy-to-test code must not satisfy the
+        # floor on behalf of the accounting and deletion paths. safety/* arrives in v0.2
+        # with its own 100-branch floor -- a floor on an absent module passes vacuously,
+        # which is the failure this project condemns elsewhere.
+        if: matrix.python == '3.11'
+        run: |
+          uv run coverage report --include='src/mac_cleanup/fs/deleter.py' --fail-under=90
+          uv run coverage report --include='src/mac_cleanup/forest.py,src/mac_cleanup/report.py,src/mac_cleanup/scan/sizes.py' --fail-under=85
+
+      - name: The fast suite stays fast
+        # A slow suite stops being run at commit time, and a suite that stops being run
+        # stops being true. Measured without coverage, which costs 2-5x on a scan-heavy run.
+        if: matrix.python == '3.11'
+        run: |
+          start=$(date +%s%N)
+          uv run pytest -q -m "not slow and not realfs and not macos" >/dev/null
+          elapsed=$((($(date +%s%N) - start) / 1000000))
+          echo "fast suite: ${elapsed}ms"
+          if [ "$elapsed" -gt 10000 ]; then
+            echo "Over the 10s ceiling. Make it faster, do not raise the ceiling." >&2
+            exit 1
+          fi
+
+  guards:
+    name: guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Structural guards
+        run: ./scripts/guards.sh
+
+      - name: The guards actually fail when the invariant is broken
+        # A guard that has only been configured is a claim. This breaks each invariant on
+        # purpose in a scratch copy and requires the guard to notice.
+        run: |
+          set -e
+          tmp=$(mktemp -d)
+          cp -R . "$tmp/repo"
+          cd "$tmp/repo"
+
+          echo 'import subprocess' >> src/mac_cleanup/forest.py
+          if ./scripts/guards.sh; then
+            echo "guards accepted a second subprocess importer" >&2; exit 1
+          fi
+          git checkout src/mac_cleanup/forest.py 2>/dev/null || true
+          cd - >/dev/null
+
+          cp -R . "$tmp/repo2" && cd "$tmp/repo2"
+          printf '{"leak": "/Users/someone/Documents/case.pdf"}\n' > results/leak.json
+          if ./scripts/guards.sh; then
+            echo "guards accepted a path-bearing artifact" >&2; exit 1
+          fi
+          echo "guards rejected both broken invariants, as they must"
+
+  macos:
+    name: macos
+    # This repository breaks the ubuntu-only convention exactly once, and only here. Three
+    # behaviours cannot be faked on Linux and all three are load-bearing: APFS st_blocks and
+    # os.clonefile accounting, firmlink st_dev/inode identity (/Users and
+    # /System/Volumes/Data/Users are one inode with two spellings), and case-insensitive
+    # filename folding. Never a timing assertion -- hosted runner I/O variance would make a
+    # published number a flake.
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv venv --python 3.11
+      - run: uv pip install pytest pytest-timeout
+      - name: macOS-specific and real-filesystem suites
+        run: uv run pytest -q -m "macos or realfs"
+      - name: The bootstrap finds an interpreter and refuses a bad one
+        run: |
+          ./bin/mac-cleanup --version
+          ./bin/mac-cleanup profile list >/dev/null
+          if MAC_CLEANUP_PYTHON=/nonexistent ./bin/mac-cleanup --version 2>/dev/null; then
+            echo "bootstrap accepted a nonexistent interpreter" >&2; exit 1
+          fi
+      - name: Read-only tool shapes still parse
+        # If Homebrew changes `cleanup -n`'s summary line, this is where it surfaces rather
+        # than on a user's machine.
+        run: |
+          brew cleanup -n | tail -2 || true
+          xcrun simctl runtime list -j | head -5 || true

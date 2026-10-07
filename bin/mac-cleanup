@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# mac-cleanup bootstrap.
+#
+# Finds a usable Python and execs the module. It contains no deletion verb, and CI greps to
+# keep it that way.
+#
+# Why it checks xcode-select first: on macOS, /usr/bin/python3 is not Python. It is the
+# xcrun shim -- byte-identical to /usr/bin/git and /usr/bin/clang (md5
+# 6106dd3c426038b98a02620e24914ebc on the author's machine). It reports a version only when
+# Xcode or the Command Line Tools are installed; otherwise invoking it pops the
+# developer-tools installer and asks to download gigabytes. On a full disk, which is when
+# you reach for this tool, that is the worst possible failure. So we detect it and print the
+# brew one-liner instead.
+
+set -euo pipefail
+
+MIN_MAJOR=3
+MIN_MINOR=11
+BREW_HINT="brew install gitchrisqueen/tap/mac-cleanup"
+
+die() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+usable() {
+  local candidate="$1"
+  [ -x "$candidate" ] || return 1
+  "$candidate" -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= ($MIN_MAJOR, $MIN_MINOR) else 1)" 2>/dev/null
+}
+
+is_xcrun_shim() {
+  # The shim exits non-zero and writes to stderr when no toolchain is present.
+  [ "$1" = /usr/bin/python3 ] && ! /usr/bin/python3 -c pass >/dev/null 2>&1
+}
+
+find_python() {
+  # Explicit override first, then brew's interpreters newest-first, then PATH, then the
+  # system shim last -- it is the one most likely to trigger a multi-gigabyte download.
+  if [ -n "${MAC_CLEANUP_PYTHON:-}" ]; then
+    usable "$MAC_CLEANUP_PYTHON" && { printf '%s' "$MAC_CLEANUP_PYTHON"; return 0; }
+    die "MAC_CLEANUP_PYTHON=$MAC_CLEANUP_PYTHON is not a Python >= $MIN_MAJOR.$MIN_MINOR"
+  fi
+
+  local candidate
+  for candidate in \
+    /opt/homebrew/opt/python@3.14/bin/python3.14 \
+    /opt/homebrew/opt/python@3.13/bin/python3.13 \
+    /opt/homebrew/opt/python@3.12/bin/python3.12 \
+    /opt/homebrew/opt/python@3.11/bin/python3.11 \
+    /usr/local/opt/python@3.14/bin/python3.14 \
+    /usr/local/opt/python@3.13/bin/python3.13 \
+    /usr/local/opt/python@3.12/bin/python3.12 \
+    /usr/local/opt/python@3.11/bin/python3.11; do
+    usable "$candidate" && { printf '%s' "$candidate"; return 0; }
+  done
+
+  if candidate="$(command -v python3 2>/dev/null)" && [ "$candidate" != /usr/bin/python3 ]; then
+    usable "$candidate" && { printf '%s' "$candidate"; return 0; }
+  fi
+
+  if is_xcrun_shim /usr/bin/python3; then
+    die "No usable Python found.
+
+/usr/bin/python3 on this machine is the Xcode command line tools stub, not an interpreter;
+running it would offer to download several gigabytes. Install mac-cleanup with Homebrew
+instead, which brings its own Python:
+
+    $BREW_HINT"
+  fi
+  usable /usr/bin/python3 && { printf '%s' /usr/bin/python3; return 0; }
+
+  die "No Python >= $MIN_MAJOR.$MIN_MINOR found. Install with:
+
+    $BREW_HINT"
+}
+
+PYTHON="$(find_python)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="$HERE/../src${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PYTHON" -m mac_cleanup "$@"
