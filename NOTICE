@@ -1,0 +1,10 @@
+mac-cleanup
+Copyright (c) 2026 Christopher Queen
+
+This project is a from-scratch rewrite of a personal 497-line bash script by the same
+author. No code was imported from any other project. The git history begins at this
+repository's first commit.
+
+The name "mac-cleanup" is also used by an unrelated and older project,
+https://github.com/mac-cleanup/mac-cleanup-py, which owns the `mac-cleanup` name on PyPI.
+This project is distributed on PyPI as `mac-cleanup-cli`. See the README.

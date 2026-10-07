@@ -1,0 +1,110 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mac-cleanup-cli"
+version = "0.1.0.dev0"
+description = "A macOS disk-space auditor that can delete: it measures developer cache locations, reports what they cost, and reclaims them through each vendor's own tool."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Christopher Queen" }]
+keywords = ["macos", "disk-usage", "cleanup", "xcode", "homebrew", "cli"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS :: MacOS X",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Filesystems",
+  "Topic :: Utilities",
+]
+# Stdlib only. A tool you reach for because the disk is full must not download anything.
+dependencies = []
+
+[project.scripts]
+mac-cleanup = "mac_cleanup.cli:main"
+
+[project.urls]
+Repository = "https://github.com/gitchrisqueen/mac-cleanup"
+Changelog = "https://github.com/gitchrisqueen/mac-cleanup/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = ["pytest>=8.3", "pytest-cov>=5.0", "pytest-timeout>=2.3", "ruff>=0.7", "mypy>=1.13"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mac_cleanup"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E","W","F","I","N","UP","B","A","C4","S","BLE","T20","SIM","ARG","RUF","TID"]
+ignore = ["S101"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+# The most important block in this file. Deletion and external commands each have exactly
+# one call site, and ruff is what keeps it that way. A second call site cannot be reviewed
+# into existence by accident, and a test cannot be written against a seam that does not exist.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"shutil.rmtree".msg      = "Deletion goes through mac_cleanup.fs.deleter. See docs/00-file-tree.md."
+"os.remove".msg          = "Deletion goes through mac_cleanup.fs.deleter."
+"os.unlink".msg          = "Deletion goes through mac_cleanup.fs.deleter."
+"os.rmdir".msg           = "Deletion goes through mac_cleanup.fs.deleter."
+"os.removedirs".msg      = "Deletion goes through mac_cleanup.fs.deleter."
+"subprocess".msg         = "External commands go through mac_cleanup.ext.runner, so the suite runs on Linux."
+"os.system".msg          = "Use mac_cleanup.ext.runner."
+"os.popen".msg           = "Use mac_cleanup.ext.runner."
+"os.path.expanduser".msg = "Home resolution is mac_cleanup.paths.home(); expanduser honours $HOME and is spoofable."
+
+[tool.ruff.lint.per-file-ignores]
+"src/mac_cleanup/fs/deleter.py" = ["TID251"]
+"src/mac_cleanup/ext/runner.py" = ["TID251"]
+"src/mac_cleanup/paths.py"      = ["TID251"]
+# N818 wants an `Error` suffix. `Refusal` is deliberate: a refusal is the guard working as
+# designed, not a failure, and the name is load-bearing in the docs and the test assertions.
+"src/mac_cleanup/errors.py"     = ["N818"]
+"src/mac_cleanup/cli.py"        = ["T20"]
+"tests/**"   = ["S", "ARG", "T20", "TID251"]
+"scripts/**" = ["T20", "TID251"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+# Strict over src only. Tests are checked by a second, relaxed invocation in scripts/lint.sh:
+# without __init__.py they are top-level modules, so a `tests.*` override never matches and
+# strict mode demands annotations on every fixture for no safety gain.
+files = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config --timeout=5"
+markers = [
+  "slow: excluded from the fast suite used at commit time",
+  "realfs: touches a real filesystem under tmp_path rather than the in-memory fake",
+  "macos: needs APFS, firmlinks, case-insensitivity or TCC; skipped off Darwin",
+  "destructive: permitted to call the real deleter, and only inside tmp_path",
+]
+# Keep error-by-default; narrow now, because a thread pool surfaces a late ResourceWarning
+# and the instinct is to delete the whole setting.
+filterwarnings = ["error", "ignore::ResourceWarning"]
+
+[tool.coverage.run]
+source = ["src/mac_cleanup"]
+branch = true
+# Without this the work-stealing workers' lines report as uncovered.
+concurrency = ["thread"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

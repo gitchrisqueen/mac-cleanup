@@ -1,0 +1,111 @@
+{
+  "schema": "mac-cleanup/phase0-outcome/1",
+  "completed_at": "2026-10-07T14:39:35Z",
+  "free_bytes_before": 446210048,
+  "free_bytes_after": 56764653568,
+  "reclaimed_bytes": 56318443520,
+  "swapusage_after": "total = 23552.00M  used = 22162.75M  free = 1389.25M  (encrypted)",
+  "steps": [
+    {
+      "target_id": "brew-cache",
+      "du_gib": 9.428,
+      "freed_gib": 7.55,
+      "verdict": "ok",
+      "note": "du overstated by 1.878 GiB"
+    },
+    {
+      "target_id": "cache-jetbrains",
+      "freed_gib": 3.592,
+      "verdict": "ok"
+    },
+    {
+      "target_id": "cache-ms-playwright",
+      "freed_gib": 1.423,
+      "verdict": "ok"
+    },
+    {
+      "target_id": "cache-pypoetry",
+      "freed_gib": 1.593,
+      "verdict": "ok"
+    },
+    {
+      "target_id": "xcode-derived-data",
+      "freed_gib": 2.974,
+      "verdict": "ok"
+    },
+    {
+      "target_id": "gradle-caches",
+      "freed_gib": 2.196,
+      "verdict": "ok"
+    },
+    {
+      "target_id": "npm-cacache",
+      "freed_gib": 1.119,
+      "verdict": "partial",
+      "errors": 2,
+      "error_class": "permission",
+      "note": "2 files owned by root inside user cache; 24K residue"
+    },
+    {
+      "target_id": "pnpm-store-v3",
+      "du_gib": 5.855,
+      "freed_gib": 1.734,
+      "verdict": "ok",
+      "note": "du overstated 3.4x: clone-shared blocks with live .pnpm trees do not free"
+    },
+    {
+      "target_id": "sim-runtime-21A328",
+      "freed_gib": null,
+      "verdict": "ok",
+      "mounted_after": 0,
+      "listed_after": 0
+    },
+    {
+      "target_id": "sim-runtime-21A342",
+      "simctl_gib": 6.715,
+      "freed_gib": 7.721,
+      "verdict": "ok",
+      "mounted_after": 0,
+      "listed_after": 0,
+      "note": "freed MORE than simctl sizeBytes: volume container also released"
+    },
+    {
+      "target_id": "sim-runtime-21J353",
+      "simctl_gib": 3.488,
+      "freed_gib": 5.36,
+      "verdict": "ok",
+      "mounted_after": 0,
+      "listed_after": 0
+    },
+    {
+      "target_id": "sim-devices-unavailable",
+      "measured_gib": 3.608,
+      "freed_gib": 0.174,
+      "verdict": "ok",
+      "note": "subsumed: runtime deletes already removed those device dirs"
+    }
+  ],
+  "deliberately_untouched": [
+    {
+      "target_id": "ios-backup",
+      "gib": 31.903,
+      "reason": "criterion met without it; authorized but optional"
+    },
+    {
+      "target_id": "clouddocs",
+      "gib": 19.591,
+      "reason": "509379 materialized files; eviction friction on active legal documents"
+    },
+    {
+      "target_id": "cache-google",
+      "gib": 2.016,
+      "reason": "Chrome was running; running-app guard"
+    },
+    {
+      "target_id": "cellar-usr-local",
+      "gib": 13.222,
+      "reason": "LIVE Homebrew, 391 formulae, x86_64 machine"
+    }
+  ],
+  "accounting_lesson": "du/simctl figures diverged from statvfs in BOTH directions; the statvfs delta is the only ground truth, as the plan states"
+}

@@ -1,0 +1,148 @@
+{
+  "schema": "mac-cleanup/baseline/1",
+  "captured_at": "2026-10-07T14:24:45Z",
+  "hw_model": "MacBookPro15,1",
+  "arch": "x86_64",
+  "macos": "15.8 (24H22)",
+  "ncpu": 16,
+  "container_free_bytes": 446210048,
+  "swapusage": "total = 24064.00M  used = 24064.00M  free = 0.00M  (encrypted)",
+  "sizes_gib": {
+    "app-support": {
+      "gib": 87.178,
+      "du_seconds": 51.0,
+      "present": true
+    },
+    "library-developer": {
+      "gib": 26.088,
+      "du_seconds": 14.1,
+      "present": true
+    },
+    "library-containers": {
+      "gib": 23.016,
+      "du_seconds": 22.1,
+      "present": true
+    },
+    "library-caches": {
+      "gib": 21.509,
+      "du_seconds": 8.2,
+      "present": true
+    },
+    "library-group-containers": {
+      "gib": 7.447,
+      "du_seconds": 2.7,
+      "present": true
+    },
+    "ios-backup": {
+      "gib": 31.903,
+      "du_seconds": 39.7,
+      "present": true
+    },
+    "brew-cache": {
+      "gib": 9.428,
+      "du_seconds": 0.5,
+      "present": true
+    },
+    "clouddocs": {
+      "gib": 19.591,
+      "du_seconds": 51.2,
+      "present": true
+    },
+    "xcode-derived-data": {
+      "gib": 3.261,
+      "du_seconds": 3.3,
+      "present": true
+    },
+    "xcode-device-support": {
+      "gib": 11.068,
+      "du_seconds": 1.0,
+      "present": true
+    },
+    "coresimulator": {
+      "gib": 10.861,
+      "du_seconds": 9.0,
+      "present": true
+    },
+    "coresimulator-devices": {
+      "gib": 10.861,
+      "du_seconds": 4.4,
+      "present": true
+    },
+    "pnpm-store": {
+      "gib": 6.387,
+      "du_seconds": 12.1,
+      "present": true
+    },
+    "npm-cacache": {
+      "gib": 1.262,
+      "du_seconds": 0.9,
+      "present": true
+    },
+    "gradle-caches": {
+      "gib": 1.337,
+      "du_seconds": 2.0,
+      "present": true
+    },
+    "cache-ms-playwright": {
+      "gib": 1.6,
+      "du_seconds": 0.2,
+      "present": true
+    },
+    "cache-pypoetry": {
+      "gib": 1.575,
+      "du_seconds": 1.3,
+      "present": true
+    },
+    "cache-jetbrains": {
+      "gib": 3.577,
+      "du_seconds": 1.2,
+      "present": true
+    },
+    "cache-google": {
+      "gib": 2.016,
+      "du_seconds": 4.3,
+      "present": true
+    },
+    "cellar-usr-local": {
+      "gib": 13.222,
+      "du_seconds": 15.9,
+      "present": true
+    }
+  },
+  "simulator_runtimes": [
+    {
+      "build": "21A342",
+      "version": "17.0.1",
+      "platform": "iphonesimulator",
+      "gib": 6.715,
+      "state": "Ready"
+    },
+    {
+      "build": "23D8133",
+      "version": "26.3.1",
+      "platform": "iphonesimulator",
+      "gib": 9.733,
+      "state": "Ready"
+    },
+    {
+      "build": "21J353",
+      "version": "17.0",
+      "platform": "appletvsimulator",
+      "gib": 3.488,
+      "state": "Ready"
+    },
+    {
+      "build": "21A328",
+      "version": "17.0",
+      "platform": "iphonesimulator",
+      "gib": 7.04,
+      "state": "Ready"
+    }
+  ],
+  "simulator_devices": {
+    "available_count": 28,
+    "available_gib": 7.253,
+    "unavailable_count": 300,
+    "unavailable_gib": 3.608
+  }
+}
