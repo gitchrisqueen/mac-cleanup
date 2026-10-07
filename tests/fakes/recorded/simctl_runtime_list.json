@@ -1,0 +1,30 @@
+{
+  "A": {
+    "build": "23D8133",
+    "version": "26.3.1",
+    "platformIdentifier": "com.apple.platform.iphonesimulator",
+    "sizeBytes": 10450316672,
+    "state": "Ready"
+  },
+  "B": {
+    "build": "21A328",
+    "version": "17.0",
+    "platformIdentifier": "com.apple.platform.iphonesimulator",
+    "sizeBytes": 7559529352,
+    "state": "Ready"
+  },
+  "C": {
+    "build": "21A342",
+    "version": "17.0.1",
+    "platformIdentifier": "com.apple.platform.iphonesimulator",
+    "sizeBytes": 7210691623,
+    "state": "Ready"
+  },
+  "D": {
+    "build": "21J353",
+    "version": "17.0",
+    "platformIdentifier": "com.apple.platform.appletvsimulator",
+    "sizeBytes": 3745733256,
+    "state": "Ready"
+  }
+}

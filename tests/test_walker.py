@@ -99,7 +99,8 @@ def test_a_firmlinked_directory_is_visited_once():
     a = os.lstat("/Users")
     b = os.lstat("/System/Volumes/Data/Users")
     assert (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino), "firmlink pair must be one inode"
-    assert "/Users" in open("/usr/share/firmlinks").read()
+    with open("/usr/share/firmlinks") as fh:
+        assert "/Users" in fh.read()
 
 
 def test_errors_are_collected_and_never_swallowed(tmp_path):
