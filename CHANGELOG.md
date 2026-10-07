@@ -4,9 +4,11 @@ Hand-written on purpose. For a tool that deletes files, an entry explaining *why
 threshold moved is the only kind worth having, and a generator cannot produce it from commit
 subjects.
 
-## Unreleased
+## 0.1.0 — 2026-10-07
 
-Initial implementation. Replaces a 497-line bash script with three measured defects: a menu
+First release. https://pypi.org/project/mac-cleanup-cli/0.1.0/
+
+Replaces a 497-line bash script with three measured defects: a menu
 that issued 816 `du -sk` invocations per render, an audit that redirected all its output into
 a file and so printed nothing for the duration, and `find … -exec rm -rf {} + 2>/dev/null`
 followed by an unconditional `Done.`

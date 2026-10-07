@@ -44,15 +44,19 @@ in every unattended invocation, where a reviewer can see it in the crontab.
 ## Install
 
 ```console
-brew install gitchrisqueen/tap/mac-cleanup
+pipx install mac-cleanup-cli      # or: uv tool install mac-cleanup-cli
 ```
 
-Homebrew brings its own Python, which matters more than it sounds: on macOS
+The distribution is `mac-cleanup-cli`; the command it installs is `mac-cleanup`. The plain
+`mac-cleanup` name on PyPI belongs to [the other project][incumbent].
+
+Either installer brings its own Python, which matters more than it sounds: on macOS
 `/usr/bin/python3` is **not an interpreter**. It is the `xcrun` shim — byte-identical to
 `/usr/bin/git` and `/usr/bin/clang` — and it reports a version only when Xcode or the
 Command Line Tools are installed. Without them, running it offers to download several
 gigabytes, which is the worst possible failure for a tool you reached for *because the disk
-is full*. `bin/mac-cleanup` checks for that case and prints the `brew` line instead.
+is full*. `bin/mac-cleanup`, the launcher used when running from a clone, checks for that case and
+prints an install line instead of triggering the download.
 
 Zero runtime dependencies (`dependencies = []` in `pyproject.toml`); Python 3.11+.
 
