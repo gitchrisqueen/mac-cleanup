@@ -220,3 +220,22 @@ def test_refusal_message_includes_code_and_detail():
     exc = Refusal("E_THING", "/some/path", "because reasons")
     assert "E_THING" in str(exc) and "because reasons" in str(exc)
     assert Refusal("E_BARE").code == "E_BARE"
+
+
+def test_probe_uses_a_short_timeout_so_a_dead_daemon_cannot_hang_a_render():
+    """Docker is the case that proves this: with its VM gone, `docker info` blocks forever
+    on a socket nobody is listening to rather than failing. The predecessor called
+    `docker system df` with no timeout at all."""
+    assert Runner().probe_timeout == 5.0, "the default probe budget"
+    assert Runner().timeout == 120.0, "the default action budget"
+
+    # Exercised with a shorter budget than pytest's own per-test timeout, so the behaviour
+    # is proven without the suite racing itself.
+    result = Runner(probe_timeout=0.2).probe([sys.executable, "-c", "import time; time.sleep(30)"])
+    assert result.timed_out is True
+    assert result.ok is False
+
+
+def test_action_timeout_is_longer_than_the_probe_timeout():
+    r = Runner()
+    assert r.timeout > r.probe_timeout

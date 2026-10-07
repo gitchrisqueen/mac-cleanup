@@ -1,0 +1,31 @@
+name: Something was removed that I needed
+description: The highest-priority report for this project.
+labels: [bug, data-loss]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this involves sensitive paths, use **private vulnerability reporting** instead
+        (see SECURITY.md). Please do not paste a full directory listing.
+  - type: input
+    id: version
+    attributes:
+      label: mac-cleanup --version
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What was removed, and what did you expect to survive?
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: The --json plan from the run, if you have it
+      render: json
+  - type: textarea
+    id: doctor
+    attributes:
+      label: mac-cleanup doctor
+      render: shell

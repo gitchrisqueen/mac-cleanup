@@ -38,9 +38,28 @@ class CommandResult:
 class Runner:
     """Runs external commands. No shell, ever: argv is passed as a list."""
 
-    def __init__(self, *, timeout: float = 300.0, max_output: int = 4_000_000) -> None:
+    # Probes are short because a dead daemon makes a client wait forever, not fail. Docker
+    # is the case that proves it: with the VM gone, `docker system df` and `docker info`
+    # block indefinitely on a socket nobody is listening to, and the predecessor script
+    # (line 338) called it with no timeout at all -- so its Docker menu hung with no output
+    # and no way to tell whether it was working. Actions get longer, but still finite.
+    PROBE_TIMEOUT = 5.0
+    ACTION_TIMEOUT = 120.0
+
+    def __init__(
+        self,
+        *,
+        timeout: float = ACTION_TIMEOUT,
+        probe_timeout: float = PROBE_TIMEOUT,
+        max_output: int = 4_000_000,
+    ) -> None:
         self.timeout = timeout
+        self.probe_timeout = probe_timeout
         self.max_output = max_output
+
+    def probe(self, argv: list[str]) -> CommandResult:
+        """Run a read-only query under the short timeout. Never blocks a render."""
+        return self.run(argv, timeout=self.probe_timeout)
 
     def which(self, name: str) -> str | None:
         return shutil.which(name)
